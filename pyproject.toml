@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "torch-mtgraph"
+version = "0.1.0"
+description = "Pure torch multi-GPU graph processing framework (GASProgram + NCCL)"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "torch>=1.8",
+    "numpy",
+]
+
+[project.optional-dependencies]
+# torch_scatter 需在 torch 安装后手动安装（参见 README）
+scatter = ["torch_scatter"]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

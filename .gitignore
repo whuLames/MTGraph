@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+
+# IDE
+.cache/
+*.swp
+.vscode/
+.idea/
+
+# 测试
+.pytest_cache/
+
+# viztracer profile 输出（MTGRAPH_PROFILE=1 时生成）
+result*.json
+
+# 图数据（外部挂载，不入 git）
+*.bin
+data/
+
+# fixtures 已包含合成小图，需保留
+!tests/fixtures/**/*.bin
