@@ -251,3 +251,63 @@ class DistributedStrategy(Strategy):
 
         return vData, {'iters': actual_iters, 'per_iter': per_iter,
                        'push_count': push_count, 'pull_count': pull_count}
+
+    @classmethod
+    def from_program(cls, algo_name, data_path, partition_num,
+                     is_long=0, max_iters=50, source=0, enable_push_pull=False):
+        """从算法名称自动创建 DistributedStrategy。
+        支持的 algo_name: 'BFS', 'PageRank', 'SSSP', 'ConnectedComponents'
+        """
+        INF = 10000.0
+        dist = __import__('torch.distributed', fromlist=['dist'])
+
+        if algo_name == 'BFS':
+            return cls(
+                data_path=data_path, partition_num=partition_num,
+                reduce='min', allreduce_op=dist.ReduceOp.MIN,
+                init_fn=lambda n, d: (vd := torch.full((n,), INF, dtype=torch.float32, device=d),
+                                      vd.__setitem__(source, 0.0), vd)[-1],
+                gather_fn=lambda vd, col, ctx: vd[col] + 1.0,
+                apply_fn=lambda old, agg, ctx: torch.min(old, agg),
+                max_iters=max_iters, fixed_iters=False,
+                enable_push_pull=enable_push_pull,
+                frontier_fn=lambda vd, vb, ve, ctx: torch.nonzero(vd[vb:ve] < INF).view(-1),
+                push_value_fn=lambda vd, fg, ctx: vd[fg] + 1.0,
+                is_long=is_long, source=source,
+            )
+        elif algo_name == 'PageRank':
+            def prepare_fn(row_ptr, device):
+                return {'frac': 1.0 / torch.diff(row_ptr).to(torch.float32).to(device),
+                        'n_verts': len(row_ptr) - 1}
+            return cls(
+                data_path=data_path, partition_num=partition_num,
+                reduce='sum', allreduce_op=dist.ReduceOp.SUM,
+                init_fn=lambda n, d: torch.ones(n, dtype=torch.float32, device=d),
+                gather_fn=lambda vd, col, ctx: (vd * ctx['frac'])[col],
+                apply_fn=lambda old, agg, ctx: 0.15 / ctx['n_verts'] + 0.85 * agg,
+                prepare_fn=prepare_fn,
+                max_iters=max_iters, fixed_iters=True,
+                is_long=is_long,
+            )
+        elif algo_name == 'SSSP':
+            return cls(
+                data_path=data_path, partition_num=partition_num,
+                reduce='min', allreduce_op=dist.ReduceOp.MIN,
+                init_fn=lambda n, d: (vd := torch.full((n,), float('inf'), dtype=torch.float32, device=d),
+                                      vd.__setitem__(source, 0.0), vd)[-1],
+                gather_fn=lambda vd, col, ctx: vd[col] + 1.0,
+                apply_fn=lambda old, agg, ctx: torch.min(old, agg),
+                max_iters=max_iters, fixed_iters=False, is_long=is_long, source=source,
+            )
+        elif algo_name == 'ConnectedComponents':
+            return cls(
+                data_path=data_path, partition_num=partition_num,
+                reduce='min', allreduce_op=dist.ReduceOp.MIN,
+                init_fn=lambda n, d: torch.arange(n, dtype=torch.int32, device=d),
+                gather_fn=lambda vd, col, ctx: vd[col],
+                apply_fn=lambda old, agg, ctx: torch.min(old, agg),
+                max_iters=max_iters, fixed_iters=False, is_long=is_long,
+            )
+        else:
+            raise ValueError(f"Unknown algorithm: {algo_name}. "
+                             f"Supported: BFS, PageRank, SSSP, ConnectedComponents")
